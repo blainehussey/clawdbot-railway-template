@@ -34,6 +34,7 @@ Recommended:
 
 Optional:
 - `OPENCLAW_GATEWAY_TOKEN` — if not set, the wrapper generates one (not ideal). In a template, set it using a generated secret.
+- `OPENCLAW_PUBLIC_ORIGIN` — set to your app’s public URL (e.g. `https://your-app.up.railway.app`) so the Control UI “origin not allowed” is fixed automatically on startup; otherwise the wrapper uses `RAILWAY_PUBLIC_DOMAIN` or a Host-header fallback when available.
 
 Notes:
 - This template pins OpenClaw to a released version by default via Docker build arg `OPENCLAW_GIT_REF` (override if you want `main`).
@@ -130,6 +131,13 @@ The Control UI connects using `gateway.remote.token` and the gateway validates `
 Fix:
 - Re-run `/setup` so the wrapper writes both tokens.
 - Or set both values to the same token in config.
+
+### “origin not allowed” (Control UI)
+
+If the Control UI shows: *origin not allowed (open the Control UI from the gateway host or allow it in gateway.controlUi.allowedOrigins)* — the wrapper now configures this automatically so your Railway (or proxy) domain is allowed.
+
+- **After deploy:** Restart the service once so the wrapper can write the origin config on startup (or re-run setup). Then open the Control UI again from your Railway URL.
+- **Optional:** Set `OPENCLAW_PUBLIC_ORIGIN` to your exact UI URL (e.g. `https://myapp.up.railway.app`) for explicit allowlisting; otherwise the wrapper uses Railway’s `RAILWAY_PUBLIC_DOMAIN` or a Host-header fallback.
 
 ### “Application failed to respond” / 502 Bad Gateway
 

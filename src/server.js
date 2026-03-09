@@ -75,6 +75,38 @@ const INTERNAL_GATEWAY_PORT = Number.parseInt(process.env.INTERNAL_GATEWAY_PORT 
 const INTERNAL_GATEWAY_HOST = process.env.INTERNAL_GATEWAY_HOST ?? "127.0.0.1";
 const GATEWAY_TARGET = `http://${INTERNAL_GATEWAY_HOST}:${INTERNAL_GATEWAY_PORT}`;
 
+// Control UI origin: when the app is behind a reverse proxy (e.g. Railway), the browser origin
+// (e.g. https://myapp.up.railway.app) must be allowed or the gateway rejects with "origin not allowed".
+function resolveControlUiOriginConfig() {
+  const explicit = process.env.OPENCLAW_PUBLIC_ORIGIN?.trim();
+  if (explicit) {
+    const origins = explicit.split(",").map((o) => o.trim()).filter(Boolean);
+    if (origins.length) return { allowedOrigins: origins };
+  }
+  const railDomain = process.env.RAILWAY_PUBLIC_DOMAIN?.trim();
+  if (railDomain) {
+    return { allowedOrigins: [`https://${railDomain}`] };
+  }
+  // No known public origin: trust Host header so Railway (and other proxies) work without env vars.
+  return { dangerouslyAllowHostHeaderOriginFallback: true };
+}
+
+async function applyControlUiOriginConfig() {
+  const cfg = resolveControlUiOriginConfig();
+  if (cfg.allowedOrigins?.length) {
+    await runCmd(
+      OPENCLAW_NODE,
+      clawArgs(["config", "set", "--json", "gateway.controlUi.allowedOrigins", JSON.stringify(cfg.allowedOrigins)]),
+    );
+  }
+  if (cfg.dangerouslyAllowHostHeaderOriginFallback) {
+    await runCmd(
+      OPENCLAW_NODE,
+      clawArgs(["config", "set", "gateway.controlUi.dangerouslyAllowHostHeaderOriginFallback", "true"]),
+    );
+  }
+}
+
 // Always run the built-from-source CLI entry directly to avoid PATH/global-install mismatches.
 const OPENCLAW_ENTRY = process.env.OPENCLAW_ENTRY?.trim() || "/openclaw/dist/entry.js";
 const OPENCLAW_NODE = process.env.OPENCLAW_NODE?.trim() || "node";
@@ -755,6 +787,9 @@ app.post("/setup/api/run", requireSetupAuth, async (req, res) => {
       clawArgs(["config", "set", "--json", "gateway.trustedProxies", JSON.stringify(["127.0.0.1"]) ]),
     );
 
+    // Allow Control UI when opened from the Railway (or other proxy) domain; avoids "origin not allowed".
+    await applyControlUiOriginConfig();
+
     // Optional: configure a custom OpenAI-compatible provider (base URL) for advanced users.
     if (payload.customProviderId?.trim() && payload.customProviderBaseUrl?.trim()) {
       const providerId = payload.customProviderId.trim();
@@ -1431,18 +1466,19 @@ const server = app.listen(PORT, "0.0.0.0", async () => {
     }
   }
 
-  // Sync gateway tokens in config with the current env var on every startup.
+  // Sync gateway tokens and Control UI origin in config on every startup.
   // This prevents "gateway token mismatch" when OPENCLAW_GATEWAY_TOKEN changes
-  // (e.g. Railway variable update) but the config file still has the old value.
+  // and keeps "origin not allowed" fixed when OPENCLAW_PUBLIC_ORIGIN / RAILWAY_PUBLIC_DOMAIN change.
   if (isConfigured() && OPENCLAW_GATEWAY_TOKEN) {
-    console.log("[wrapper] syncing gateway tokens in config...");
+    console.log("[wrapper] syncing gateway config...");
     try {
       await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.auth.mode", "token"]));
       await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.auth.token", OPENCLAW_GATEWAY_TOKEN]));
       await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.remote.token", OPENCLAW_GATEWAY_TOKEN]));
-      console.log("[wrapper] gateway tokens synced");
+      await applyControlUiOriginConfig();
+      console.log("[wrapper] gateway config synced");
     } catch (err) {
-      console.warn(`[wrapper] failed to sync gateway tokens: ${String(err)}`);
+      console.warn(`[wrapper] failed to sync gateway config: ${String(err)}`);
     }
   }
 
