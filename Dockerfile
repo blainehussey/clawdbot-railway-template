@@ -36,16 +36,7 @@ RUN set -eux; \
 # Reduce OOM risk on Railway/small build environments (avoid exit 137 during install).
 ENV NODE_OPTIONS="--max-old-space-size=2048"
 RUN pnpm install --no-frozen-lockfile
-
-# A2UI bundle can fail under QEMU/low memory; stub so build continues (matches upstream Dockerfile).
-RUN pnpm canvas:a2ui:bundle || \
-  (echo "A2UI bundle: creating stub (non-fatal)" && \
-   mkdir -p src/canvas-host/a2ui && \
-   echo "/* A2UI bundle unavailable in this build */" > src/canvas-host/a2ui/a2ui.bundle.js && \
-   echo "stub" > src/canvas-host/a2ui/.bundle.hash && \
-   rm -rf vendor/a2ui apps/shared/OpenClawKit/Tools/CanvasA2UI 2>/dev/null || true)
-# build:docker skips the A2UI step (we already ran it or stubbed above).
-RUN pnpm build:docker
+RUN pnpm build
 ENV OPENCLAW_PREFER_PNPM=1
 RUN pnpm ui:install && pnpm ui:build
 
